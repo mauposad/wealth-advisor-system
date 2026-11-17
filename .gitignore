@@ -1,0 +1,38 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python bytecode, caches, and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+
+# Runtime-generated interaction and evaluation data
+logs/*.json
+logs/*.jsonl
+
+# Streamlit local state
+.streamlit/secrets.toml
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Windows alternate data stream artifacts from extracted files
+*:Zone.Identifier
