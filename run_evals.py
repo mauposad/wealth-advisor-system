@@ -10,22 +10,27 @@ from calculator import route_calculation, format_calculator_block
 from citations import audit_citations
 from llm_client import answer
 from prompts import SYSTEM_PROMPT, build_user_prompt
-from rag import Retriever, format_context
+from rag import Retriever, STUDENT_LOAN_CORPUS_PATTERNS, format_context
 from runtime_manifest import write_manifest
 
 load_dotenv()
 ROOT = Path(__file__).parent
-retriever = Retriever(ROOT / "corpus")
+retriever = Retriever(ROOT / "corpus", include_patterns=STUDENT_LOAN_CORPUS_PATTERNS)
 top_k = int(os.getenv("RAG_TOP_K", "4"))
+min_retrieval_score = float(os.getenv("RAG_MIN_SCORE", "0.15"))
 
-cases = json.loads((ROOT / "eval_cases.json").read_text(encoding="utf-8"))
+cases_filename = os.getenv("EVAL_CASES_FILE", "eval_cases.json")
+cases_path = ROOT / cases_filename
+if not cases_path.is_file():
+    raise FileNotFoundError(f"Evaluation cases file not found: {cases_path}")
+cases = json.loads(cases_path.read_text(encoding="utf-8"))
 manifest, manifest_path = write_manifest(ROOT, SYSTEM_PROMPT, top_k)
 results = []
 
 for case in cases:
     query = case["prompt"]
     history = case.get("history", [])
-    hits = retriever.search(query, top_k)
+    hits = retriever.search(query, top_k, min_retrieval_score)
     context = format_context(hits)
     calc = route_calculation(query)
     prompt = build_user_prompt(query, context, format_calculator_block(calc), history)
@@ -55,9 +60,9 @@ for case in cases:
     })
 
 payload = {"manifest": manifest, "results": results}
-out = ROOT / "logs" / "eval_results.json"
+out = ROOT / "logs" / f"{cases_path.stem}_results.json"
 out.parent.mkdir(exist_ok=True)
 out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-print(f"Wrote {len(results)} evaluation results to {out}")
+print(f"Wrote {len(results)} results from {cases_path.name} to {out}")
 print(f"Wrote run manifest to {manifest_path}")
 print("Manual review reminder: for each failure, first mark whether the evidence needed for a good answer was present in the retrieved context.")

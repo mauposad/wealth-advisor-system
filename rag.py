@@ -8,6 +8,15 @@ from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# The live application currently specializes in debt management and student loans.
+# Keep earlier investment-course material in the repository, but out of this index.
+STUDENT_LOAN_CORPUS_PATTERNS = (
+    "07_student_loan_*.md",
+    "08_public_service_loan_forgiveness_*.md",
+    "09_student_loan_tax_rules_*.md",
+    "10_household_finances_shed_*.md",
+)
+
 @dataclass
 class Chunk:
     source: str
@@ -25,30 +34,57 @@ class Hit:
         return asdict(self)
 
 
-def load_chunks(corpus_dir: str | Path) -> List[Chunk]:
+def _is_provenance_only(paragraph: str) -> bool:
+    """Exclude source labels/URL lists that are useful to readers but not retrieval evidence."""
+    normalized = paragraph.strip().lower()
+    return (
+        normalized in {"source:", "sources:"}
+        or normalized.startswith("source: ")
+        or normalized.startswith("sources: ")
+        or normalized.startswith("- internal revenue service,")
+    )
+
+
+def load_chunks(
+    corpus_dir: str | Path,
+    include_patterns: tuple[str, ...] | None = None,
+) -> List[Chunk]:
     corpus_dir = Path(corpus_dir)
     chunks: List[Chunk] = []
-    for path in sorted(corpus_dir.glob("*.md")):
+    if include_patterns is None:
+        paths = sorted(corpus_dir.glob("*.md"))
+    else:
+        paths = sorted({path for pattern in include_patterns for path in corpus_dir.glob(pattern)})
+
+    for path in paths:
         body = path.read_text(encoding="utf-8")
         paragraphs = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", body)]
-        paragraphs = [p for p in paragraphs if p and not p.startswith("#")]
+        paragraphs = [
+            p
+            for p in paragraphs
+            if p and not p.startswith("#") and not _is_provenance_only(p)
+        ]
         for i, paragraph in enumerate(paragraphs, 1):
             chunks.append(Chunk(path.name, f"{path.stem}-c{i}", paragraph))
     return chunks
 
 
 class Retriever:
-    def __init__(self, corpus_dir: str | Path):
-        self.chunks = load_chunks(corpus_dir)
+    def __init__(
+        self,
+        corpus_dir: str | Path,
+        include_patterns: tuple[str, ...] | None = None,
+    ):
+        self.chunks = load_chunks(corpus_dir, include_patterns)
         if not self.chunks:
             raise ValueError("No corpus chunks found")
         self.vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
         self.matrix = self.vectorizer.fit_transform([c.text for c in self.chunks])
 
-    def search(self, query: str, top_k: int = 4) -> List[Hit]:
+    def search(self, query: str, top_k: int = 4, min_score: float = 0.0) -> List[Hit]:
         query_vec = self.vectorizer.transform([query])
         scores = cosine_similarity(query_vec, self.matrix)[0]
-        order = scores.argsort()[::-1][:top_k]
+        order = [i for i in scores.argsort()[::-1] if scores[i] >= min_score][:top_k]
         return [
             Hit(
                 source=self.chunks[i].source,

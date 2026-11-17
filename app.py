@@ -11,19 +11,20 @@ from citations import audit_citations
 from llm_client import answer
 from logging_utils import append_log
 from prompts import SYSTEM_PROMPT, POLICY_VERSION, SYSTEM_BOUNDARIES, build_user_prompt
-from rag import Retriever, format_context
+from rag import Retriever, STUDENT_LOAN_CORPUS_PATTERNS, format_context
 from runtime_manifest import build_manifest
 
 load_dotenv()
 ROOT = Path(__file__).parent
 CORPUS = ROOT / "corpus"
 TOP_K = int(os.getenv("RAG_TOP_K", "4"))
+MIN_RETRIEVAL_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.15"))
 HISTORY_MESSAGES = int(os.getenv("CHAT_HISTORY_MESSAGES", "6"))
 
 
 @st.cache_resource
 def get_retriever():
-    return Retriever(CORPUS)
+    return Retriever(CORPUS, include_patterns=STUDENT_LOAN_CORPUS_PATTERNS)
 
 
 st.set_page_config(page_title="94-879 Wealth Advisor Scaffold", layout="wide")
@@ -39,6 +40,7 @@ with st.sidebar:
     elif backend == "ollama":
         st.write(f"Model: `{os.getenv('OLLAMA_MODEL', 'qwen3:4b')}`")
     st.write(f"Retrieval top-k: **{TOP_K}**")
+    st.write(f"Minimum retrieval score: **{MIN_RETRIEVAL_SCORE:.2f}**")
     st.write(f"Conversation context: last **{HISTORY_MESSAGES}** messages")
     st.write(f"Policy version: `{POLICY_VERSION}`")
     st.write(f"System Boundaries: `{SYSTEM_BOUNDARIES}`")
@@ -62,7 +64,7 @@ if query:
         st.markdown(query)
 
     retriever = get_retriever()
-    hits = retriever.search(query, TOP_K)
+    hits = retriever.search(query, TOP_K, MIN_RETRIEVAL_SCORE)
     context = format_context(hits)
     calc = route_calculation(query)
     calc_block = format_calculator_block(calc)
